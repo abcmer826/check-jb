@@ -1,0 +1,56 @@
+name: build-ipa
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ldid
+        run: brew install ldid
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          clang --version
+          xcrun --sdk iphoneos --show-sdk-path
+          xcrun --sdk iphoneos --show-sdk-version
+
+      - name: Build Check-JB.ipa
+        run: |
+          export SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
+          export TARGET="arm64-apple-ios15.0"
+          chmod +x build
+          ./build
+
+      - name: Inspect output
+        run: |
+          file p/Payload/Check-JB.app/Check-JB
+          ls -l p.ipa
+          unzip -l p.ipa
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Check-JB-ipa
+          path: p.ipa
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="build-$(date '+%Y%m%d-%H%M%S')"
+          gh release create "$tag" p.ipa \
+            --title "Check-JB $tag" \
+            --notes "Automated build from ${{ github.sha }}" \
+            --repo "${{ github.repository }}"
